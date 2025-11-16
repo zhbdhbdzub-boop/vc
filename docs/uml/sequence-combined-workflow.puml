@@ -1,0 +1,176 @@
+@startuml Sequence Diagram - Combined CV Analysis + Interview Workflow
+
+actor User
+participant "React\nFrontend" as Frontend
+participant "API\nGateway" as Gateway
+participant "Module\nRegistry" as Registry
+participant "CV Analysis\nService" as CVService
+participant "Interview\nService" as InterviewService
+participant "Workflow\nEngine" as Workflow
+participant "Message\nBus" as Bus
+participant "OpenAI\nAPI" as OpenAI
+database "PostgreSQL" as DB
+
+User -> Frontend: Select "AI Interview\nwith CV Insights"
+activate Frontend
+
+Frontend -> Gateway: Check available modules
+activate Gateway
+Gateway -> Registry: get_active_modules(tenant_id)
+activate Registry
+Registry -> DB: SELECT * FROM module_licenses\nWHERE tenant_id=? AND is_active=true
+activate DB
+DB --> Registry: [cv_analysis, interview_simulation]
+deactivate DB
+Registry --> Gateway: modules list
+deactivate Registry
+Gateway --> Frontend: both modules active
+deactivate Gateway
+
+Frontend -> User: Show combined workflow UI
+User -> Frontend: Upload CV +\nenter job details
+
+Frontend -> Gateway: POST /api/workflows/cv-interview\n{cv_file, job_data}
+activate Gateway
+
+Gateway -> Workflow: start_combined_workflow(tenant, cv, job)
+activate Workflow
+
+Workflow -> CVService: analyze_cv(cv, job)
+activate CVService
+CVService -> DB: Create cv_analysis (pending)
+activate DB
+DB --> CVService: analysis_id
+deactivate DB
+CVService -> Bus: publish('cv.analysis.started', data)
+activate Bus
+deactivate Bus
+CVService --> Workflow: analysis_id
+deactivate CVService
+
+Workflow -> InterviewService: create_session(cv, job, analysis_id)
+activate InterviewService
+InterviewService -> DB: INSERT INTO interview_sessions
+activate DB
+DB --> InterviewService: session_id
+deactivate DB
+InterviewService --> Workflow: session_id (pending analysis)
+deactivate InterviewService
+
+Workflow --> Gateway: {workflow_id, status='processing'}
+deactivate Workflow
+Gateway --> Frontend: workflow started
+deactivate Gateway
+
+Frontend -> User: Show "Analyzing CV..."
+deactivate Frontend
+
+... CV Analysis Completes (see prev diagram) ...
+
+Bus -> Bus: Event: cv.analysis.completed
+activate Bus
+Bus -> InterviewService: consume('cv.analysis.completed')
+deactivate Bus
+
+activate InterviewService
+InterviewService -> CVService: GET /internal/cv-analysis/:id
+activate CVService
+CVService -> DB: SELECT * FROM cv_analyses WHERE id=?
+activate DB
+DB --> CVService: {match_score, skill_gaps, strengths}
+deactivate DB
+CVService --> InterviewService: analysis insights
+deactivate CVService
+
+note right of InterviewService
+  Use CV insights to:
+  - Focus questions on skill gaps
+  - Adjust difficulty based on experience
+  - Tailor scenarios to candidate background
+end note
+
+InterviewService -> OpenAI: POST /v1/chat/completions\nPrompt: "Generate interview questions\nusing CV insights: {insights}"
+activate OpenAI
+OpenAI --> InterviewService: customized_questions[]
+deactivate OpenAI
+
+InterviewService -> DB: INSERT INTO interview_questions\n(session_id, questions)
+activate DB
+DB --> InterviewService: success
+deactivate DB
+
+InterviewService -> DB: UPDATE interview_sessions\nSET status='ready', cv_analysis_id=?
+DB --> InterviewService: updated
+deactivate DB
+
+InterviewService -> Bus: publish('interview.ready', session_id)
+activate Bus
+deactivate Bus
+
+InterviewService -> Frontend: WebSocket: interview_ready(session_id)
+deactivate InterviewService
+
+activate Frontend
+Frontend -> User: Notification: "Interview Ready"
+User -> Frontend: Start interview
+
+Frontend -> Gateway: GET /api/interviews/:id/questions
+activate Gateway
+Gateway -> InterviewService: get_questions(session_id)
+activate InterviewService
+InterviewService -> DB: SELECT * FROM interview_questions
+activate DB
+DB --> InterviewService: questions[]
+deactivate DB
+InterviewService --> Gateway: questions with context
+deactivate InterviewService
+Gateway --> Frontend: questions
+deactivate Gateway
+
+loop For each question
+  Frontend -> User: Display question
+  User -> Frontend: Submit answer
+  Frontend -> Gateway: POST /api/interviews/:id/answer
+  activate Gateway
+  Gateway -> InterviewService: submit_answer(question_id, answer)
+  activate InterviewService
+  
+  InterviewService -> OpenAI: Evaluate answer\nwith CV context
+  activate OpenAI
+  OpenAI --> InterviewService: {score, feedback}
+  deactivate OpenAI
+  
+  InterviewService -> DB: INSERT INTO interview_answers
+  activate DB
+  DB --> InterviewService: saved
+  deactivate DB
+  InterviewService --> Gateway: answer scored
+  deactivate InterviewService
+  Gateway --> Frontend: next question
+  deactivate Gateway
+end
+
+Frontend -> Gateway: POST /api/interviews/:id/complete
+activate Gateway
+Gateway -> InterviewService: complete_interview(session_id)
+activate InterviewService
+
+InterviewService -> InterviewService: Calculate overall score\nwith CV analysis weighting
+InterviewService -> DB: INSERT INTO interview_reports
+activate DB
+DB --> InterviewService: report_id
+deactivate DB
+
+InterviewService -> Bus: publish('interview.completed', report_id)
+activate Bus
+deactivate Bus
+
+InterviewService --> Gateway: {report_id, overall_score}
+deactivate InterviewService
+Gateway --> Frontend: interview completed
+deactivate Gateway
+
+Frontend -> User: Show combined report:\n- CV match score\n- Interview performance\n- Integrated recommendations
+deactivate Frontend
+
+@enduml

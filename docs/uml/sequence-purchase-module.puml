@@ -1,0 +1,97 @@
+@startuml Sequence Diagram - Purchase Module
+
+actor User
+participant "React\nFrontend" as Frontend
+participant "API\nGateway" as Gateway
+participant "Auth\nService" as Auth
+participant "Marketplace\nService" as Marketplace
+participant "Billing\nService" as Billing
+participant "Stripe\nAPI" as Stripe
+participant "Module\nRegistry" as Registry
+database "PostgreSQL" as DB
+
+User -> Frontend: Click "Purchase Module"
+activate Frontend
+
+Frontend -> Gateway: GET /api/modules/:id
+activate Gateway
+Gateway -> Marketplace: get_module_details(id)
+activate Marketplace
+Marketplace -> DB: SELECT * FROM modules WHERE id=?
+activate DB
+DB --> Marketplace: module data
+deactivate DB
+Marketplace --> Gateway: module details
+deactivate Marketplace
+Gateway --> Frontend: module info + pricing
+deactivate Gateway
+
+Frontend -> User: Show module details\n+ purchase options
+User -> Frontend: Confirm purchase
+
+Frontend -> Gateway: POST /api/purchases\n{module_id, payment_method}
+activate Gateway
+
+Gateway -> Auth: verify_token(jwt)
+activate Auth
+Auth --> Gateway: user + tenant
+deactivate Auth
+
+Gateway -> Billing: create_purchase(tenant, module, amount)
+activate Billing
+
+Billing -> DB: INSERT INTO purchases
+activate DB
+DB --> Billing: purchase_id
+deactivate DB
+
+Billing -> Stripe: create_payment_intent(amount)
+activate Stripe
+Stripe --> Billing: client_secret
+deactivate Stripe
+
+Billing --> Gateway: {purchase_id, client_secret}
+deactivate Billing
+Gateway --> Frontend: payment intent
+deactivate Gateway
+
+Frontend -> Frontend: Show Stripe\ncard input
+User -> Frontend: Enter card details
+Frontend -> Stripe: confirm_payment(client_secret, card)
+activate Stripe
+Stripe --> Frontend: payment_success
+deactivate Stripe
+
+Frontend -> Gateway: POST /api/purchases/:id/confirm
+activate Gateway
+Gateway -> Billing: confirm_purchase(purchase_id)
+activate Billing
+
+Billing -> Stripe: retrieve_payment(payment_id)
+activate Stripe
+Stripe --> Billing: payment status = succeeded
+deactivate Stripe
+
+Billing -> DB: UPDATE purchases\nSET status='completed'
+activate DB
+DB --> Billing: success
+deactivate DB
+
+Billing -> Registry: activate_license(tenant, module)
+activate Registry
+Registry -> DB: INSERT INTO module_licenses
+activate DB
+DB --> Registry: license_id
+deactivate DB
+Registry --> Billing: license activated
+deactivate Registry
+
+Billing --> Gateway: purchase completed
+deactivate Billing
+Gateway --> Frontend: {success, license_id}
+deactivate Gateway
+
+Frontend -> User: Show success +\nredirect to module
+deactivate Frontend
+
+@enduml

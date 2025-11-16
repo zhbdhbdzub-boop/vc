@@ -1,0 +1,129 @@
+@startuml Use Case Diagram - Modular Platform
+
+left to right direction
+skinparam packageStyle rectangle
+
+actor "Anonymous User" as Anonymous
+actor "Registered User" as User
+actor "Admin" as Admin
+actor "Payment Gateway" as Stripe
+actor "LLM API" as LLM
+
+rectangle "Modular Platform System" {
+  
+  package "Authentication" {
+    usecase "Register Account" as UC1
+    usecase "Login" as UC2
+    usecase "Logout" as UC3
+    usecase "Reset Password" as UC4
+  }
+  
+  package "Module Marketplace" {
+    usecase "Browse Modules" as UC5
+    usecase "View Module Details" as UC6
+    usecase "Purchase Module" as UC7
+    usecase "Subscribe to Module" as UC8
+    usecase "Cancel Subscription" as UC9
+    usecase "Start Free Trial" as UC10
+  }
+  
+  package "Dashboard" {
+    usecase "View Owned Modules" as UC11
+    usecase "Enable/Disable Module" as UC12
+    usecase "Configure Module Settings" as UC13
+    usecase "View Usage Analytics" as UC14
+  }
+  
+  package "CV Analysis Module" {
+    usecase "Upload CV" as UC15
+    usecase "Enter Job Details" as UC16
+    usecase "Analyze CV Match" as UC17
+    usecase "Download Analysis Report" as UC18
+    usecase "View Match Score" as UC19
+  }
+  
+  package "Interview Simulation Module" {
+    usecase "Create Interview Session" as UC20
+    usecase "Generate Questions" as UC21
+    usecase "Conduct Interview" as UC22
+    usecase "Submit Answers" as UC23
+    usecase "View Interview Results" as UC24
+  }
+  
+  package "Module Integration" {
+    usecase "Link Modules" as UC25
+    usecase "Configure Workflows" as UC26
+    usecase "Run Combined Analysis" as UC27
+  }
+  
+  package "Admin Functions" {
+    usecase "Manage Users" as UC28
+    usecase "View All Transactions" as UC29
+    usecase "Deploy New Module" as UC30
+    usecase "Configure System Settings" as UC31
+  }
+}
+
+' Anonymous User relationships
+Anonymous --> UC1
+Anonymous --> UC2
+Anonymous --> UC5
+
+' Registered User relationships
+User --> UC2
+User --> UC3
+User --> UC4
+User --> UC5
+User --> UC6
+User --> UC7
+User --> UC8
+User --> UC9
+User --> UC10
+User --> UC11
+User --> UC12
+User --> UC13
+User --> UC14
+
+' CV Analysis Module
+User --> UC15
+User --> UC16
+User --> UC17
+User --> UC18
+User --> UC19
+
+' Interview Module
+User --> UC20
+User --> UC21
+User --> UC22
+User --> UC23
+User --> UC24
+
+' Integration
+User --> UC25
+User --> UC26
+User --> UC27
+
+' Admin relationships
+Admin --> UC28
+Admin --> UC29
+Admin --> UC30
+Admin --> UC31
+
+' External system relationships
+UC7 ..> Stripe : <<uses>>
+UC8 ..> Stripe : <<uses>>
+UC9 ..> Stripe : <<uses>>
+UC17 ..> LLM : <<uses>>
+UC21 ..> LLM : <<uses>>
+UC27 ..> LLM : <<uses>>
+
+' Dependencies
+UC7 ..> UC6 : <<extends>>
+UC17 ..> UC15 : <<includes>>
+UC17 ..> UC16 : <<includes>>
+UC21 ..> UC15 : <<includes>>
+UC21 ..> UC16 : <<includes>>
+UC27 ..> UC17 : <<includes>>
+UC27 ..> UC21 : <<includes>>
+
+@enduml

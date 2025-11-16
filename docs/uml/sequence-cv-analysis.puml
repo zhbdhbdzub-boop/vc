@@ -1,0 +1,126 @@
+@startuml Sequence Diagram - CV Analysis Workflow
+
+actor User
+participant "React\nFrontend" as Frontend
+participant "API\nGateway" as Gateway
+participant "Auth\nService" as Auth
+participant "CV Analysis\nService" as CVService
+participant "S3\nStorage" as S3
+participant "Celery\nWorker" as Worker
+participant "OpenAI\nAPI" as OpenAI
+participant "Elasticsearch" as ES
+database "PostgreSQL" as DB
+
+User -> Frontend: Upload CV file\n+ enter job details
+activate Frontend
+
+Frontend -> Gateway: POST /api/cv-analysis/upload\n{file, job_title, job_description}
+activate Gateway
+
+Gateway -> Auth: verify_token(jwt)
+activate Auth
+Auth -> Gateway: Check module license
+Gateway -> DB: Check CV Analysis module active
+activate DB
+DB --> Gateway: license valid
+deactivate DB
+Auth --> Gateway: authorized
+deactivate Auth
+
+Gateway -> CVService: upload_cv(file, job_data, tenant_id)
+activate CVService
+
+CVService -> S3: upload_file(cv.pdf)
+activate S3
+S3 --> CVService: file_url
+deactivate S3
+
+CVService -> DB: INSERT INTO cv_documents
+activate DB
+DB --> CVService: cv_id
+deactivate DB
+
+CVService -> DB: INSERT INTO job_descriptions
+DB --> CVService: job_id
+deactivate DB
+
+CVService -> DB: INSERT INTO cv_analyses\n(status='pending')
+activate DB
+DB --> CVService: analysis_id
+deactivate DB
+
+CVService -> Worker: enqueue_task('analyze_cv',\nanalysis_id)
+activate Worker
+Worker --> CVService: task_id
+deactivate Worker
+
+CVService --> Gateway: {analysis_id, status='pending'}
+deactivate CVService
+Gateway --> Frontend: analysis queued
+deactivate Gateway
+
+Frontend -> User: Show "Processing..." status
+deactivate Frontend
+
+... Async Processing ...
+
+Worker -> Worker: Start analyze_cv task
+activate Worker
+
+Worker -> S3: download_file(cv_url)
+activate S3
+S3 --> Worker: cv.pdf bytes
+deactivate S3
+
+Worker -> Worker: extract_text_from_pdf()
+Worker -> OpenAI: POST /v1/chat/completions\n{prompt: "Extract skills, experience..."}
+activate OpenAI
+OpenAI --> Worker: {skills:[], experience:[]}
+deactivate OpenAI
+
+Worker -> DB: UPDATE cv_documents\nSET extracted_data=?
+activate DB
+DB --> Worker: success
+deactivate DB
+
+Worker -> ES: index_document(cv_id, text)
+activate ES
+ES --> Worker: indexed
+deactivate ES
+
+Worker -> Worker: Calculate match score\nusing job requirements
+
+Worker -> OpenAI: POST /v1/chat/completions\n{prompt: "Compare CV to job..."}
+activate OpenAI
+OpenAI --> Worker: {match_analysis, score}
+deactivate OpenAI
+
+Worker -> DB: UPDATE cv_analyses\nSET status='completed',\nmatch_score=?, results=?
+activate DB
+DB --> Worker: success
+deactivate DB
+
+Worker -> Frontend: WebSocket event:\nanalysis_complete(analysis_id)
+deactivate Worker
+
+Frontend -> User: Show notification
+activate Frontend
+User -> Frontend: Click "View Results"
+
+Frontend -> Gateway: GET /api/cv-analysis/:id/report
+activate Gateway
+Gateway -> CVService: get_analysis_report(analysis_id)
+activate CVService
+CVService -> DB: SELECT * FROM cv_analyses WHERE id=?
+activate DB
+DB --> CVService: analysis data + results
+deactivate DB
+CVService --> Gateway: full report
+deactivate CVService
+Gateway --> Frontend: report JSON
+deactivate Gateway
+
+Frontend -> User: Display match score,\nskill gaps, recommendations
+deactivate Frontend
+
+@enduml

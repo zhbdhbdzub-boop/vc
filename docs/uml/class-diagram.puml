@@ -1,0 +1,259 @@
+@startuml Class Diagram - Modular Platform Core
+
+' Core Domain Classes
+class User {
+  +UUID id
+  +String email
+  +String password_hash
+  +String first_name
+  +String last_name
+  +Boolean is_active
+  +DateTime created_at
+  +DateTime last_login
+  --
+  +login()
+  +logout()
+  +reset_password()
+  +get_owned_modules()
+}
+
+class Tenant {
+  +UUID id
+  +String name
+  +String slug
+  +String subscription_tier
+  +Integer max_users
+  +DateTime created_at
+  +Boolean is_active
+  --
+  +add_user(user)
+  +remove_user(user)
+  +get_active_modules()
+}
+
+class Module {
+  +UUID id
+  +String name
+  +String slug
+  +String description
+  +String version
+  +Decimal price_onetime
+  +Decimal price_monthly
+  +JSON capabilities
+  +JSON dependencies
+  +Boolean is_active
+  --
+  +install(tenant)
+  +uninstall(tenant)
+  +check_dependencies()
+  +get_settings_schema()
+}
+
+class ModuleLicense {
+  +UUID id
+  +FK tenant
+  +FK module
+  +Enum license_type [trial, purchased, subscription]
+  +DateTime activated_at
+  +DateTime expires_at
+  +Boolean is_active
+  +JSON settings
+  --
+  +activate()
+  +deactivate()
+  +check_expiration()
+  +renew()
+}
+
+class Purchase {
+  +UUID id
+  +FK tenant
+  +FK module
+  +Decimal amount
+  +String currency
+  +Enum status [pending, completed, failed, refunded]
+  +String stripe_payment_id
+  +DateTime created_at
+  --
+  +process_payment()
+  +refund()
+  +activate_license()
+}
+
+class Subscription {
+  +UUID id
+  +FK tenant
+  +FK module
+  +Enum interval [monthly, annual]
+  +Decimal amount
+  +String stripe_subscription_id
+  +DateTime current_period_start
+  +DateTime current_period_end
+  +Enum status [active, cancelled, expired]
+  --
+  +renew()
+  +cancel()
+  +upgrade()
+}
+
+' CV Analysis Module Classes
+class CVDocument {
+  +UUID id
+  +FK tenant
+  +FK uploaded_by
+  +String filename
+  +String file_url
+  +JSON extracted_data
+  +DateTime uploaded_at
+  --
+  +extract_text()
+  +parse_content()
+  +get_skills()
+  +get_experience()
+}
+
+class JobDescription {
+  +UUID id
+  +FK tenant
+  +String title
+  +Text description
+  +JSON required_skills
+  +JSON preferred_skills
+  +String experience_level
+  +DateTime created_at
+  --
+  +extract_requirements()
+  +calculate_complexity()
+}
+
+class CVAnalysis {
+  +UUID id
+  +FK cv_document
+  +FK job_description
+  +FK tenant
+  +Float match_score
+  +JSON skill_matches
+  +JSON experience_analysis
+  +JSON recommendations
+  +Enum status [pending, processing, completed, failed]
+  +DateTime created_at
+  --
+  +calculate_match()
+  +generate_report()
+  +export_pdf()
+}
+
+' Interview Simulation Module Classes
+class InterviewSession {
+  +UUID id
+  +FK cv_document
+  +FK job_description
+  +FK tenant
+  +FK candidate_user
+  +String session_token
+  +Enum status [scheduled, in_progress, completed, cancelled]
+  +DateTime started_at
+  +DateTime completed_at
+  --
+  +start()
+  +complete()
+  +pause()
+  +resume()
+}
+
+class InterviewQuestion {
+  +UUID id
+  +FK interview_session
+  +Integer question_number
+  +Text question_text
+  +Enum difficulty [easy, medium, hard]
+  +JSON expected_keywords
+  +Integer time_limit_seconds
+  +DateTime asked_at
+  --
+  +generate_from_job()
+  +evaluate_answer()
+}
+
+class InterviewAnswer {
+  +UUID id
+  +FK interview_question
+  +Text answer_text
+  +Float confidence_score
+  +JSON evaluation
+  +Integer time_taken_seconds
+  +DateTime submitted_at
+  --
+  +calculate_score()
+  +extract_keywords()
+}
+
+class InterviewReport {
+  +UUID id
+  +FK interview_session
+  +Float overall_score
+  +JSON question_scores
+  +JSON strengths
+  +JSON weaknesses
+  +Text recommendations
+  +DateTime generated_at
+  --
+  +generate()
+  +export_pdf()
+  +send_email()
+}
+
+' Module Integration Classes
+class ModuleConnector {
+  +UUID id
+  +FK source_module
+  +FK target_module
+  +FK tenant
+  +JSON mapping_config
+  +Boolean is_active
+  --
+  +execute(data)
+  +validate_schema()
+  +get_output()
+}
+
+class Workflow {
+  +UUID id
+  +FK tenant
+  +String name
+  +JSON steps
+  +Enum trigger_type [manual, scheduled, event]
+  +Boolean is_active
+  --
+  +execute()
+  +add_step()
+  +validate()
+}
+
+' Relationships
+User "1" -- "1..*" Tenant : belongs to
+Tenant "1" -- "0..*" ModuleLicense : owns
+Module "1" -- "0..*" ModuleLicense : licensed in
+Tenant "1" -- "0..*" Purchase : makes
+Module "1" -- "0..*" Purchase : purchased
+Tenant "1" -- "0..*" Subscription : subscribes
+Module "1" -- "0..*" Subscription : subscribed to
+
+CVDocument "1" -- "0..*" CVAnalysis : analyzed in
+JobDescription "1" -- "0..*" CVAnalysis : used in
+CVAnalysis "1" -- "1" Tenant : belongs to
+
+CVDocument "1" -- "0..*" InterviewSession : used in
+JobDescription "1" -- "0..*" InterviewSession : defines
+InterviewSession "1" -- "1..*" InterviewQuestion : contains
+InterviewQuestion "1" -- "0..1" InterviewAnswer : answered by
+InterviewSession "1" -- "0..1" InterviewReport : produces
+
+Module "1" -- "0..*" ModuleConnector : source
+Module "1" -- "0..*" ModuleConnector : target
+Tenant "1" -- "0..*" Workflow : creates
+Workflow "0..*" -- "2..*" Module : uses
+
+CVAnalysis "0..1" -- "0..1" InterviewSession : enriches >
+
+@enduml
